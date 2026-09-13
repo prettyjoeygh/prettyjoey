@@ -1,6 +1,9 @@
+import torch
 # matrix as input, index of source row, and target row
 def rowswap(matrix, source_row_index, target_index):
-    matrix[source_row_index], matrix[target_index] = matrix[target_index], matrix[source_row_index]
+    # fixed bug, I think memory overwrites destroys good data
+    # using [[]] fixes this overwriting issue
+    matrix[[source_row_index, target_index]] = matrix[[target_index, source_row_index]]
     return matrix 
 
 
@@ -37,7 +40,7 @@ def rref(matrix):
     """
     # python struggles to do the math without a locked type as float
     # was throwing garbage values out without it
-    matrix = matrix.astype(float)
+    matrix = matrix.to(torch.float64)
     # recall: shape returns tuple of values returns: (rows,cols)
     row_len, col_len = matrix.shape
     locked_rows = []
@@ -86,4 +89,20 @@ def rref(matrix):
 
     
     return matrix
-            
+
+
+def main():
+    # testing 
+    """
+    test = torch.tensor([ [1, 3, 0, 0, 3],[0, 0, 1, 0, 9],[0, 0, 0, 1, -4] ], dtype=torch.float64)
+    print(test)
+    test2 = rowswap(test,0,1) #correctly swaps rows 1 & 2
+    print("\n", test2)
+    test3 = rowscale(test2, 0, 1 / 3)
+    print("\n",test3)
+    test4 = rowreplacement(test3, 2, 0, 1, -3)
+    print("\n",test4)
+if __name__ == "__main__":
+    main()
+    
+    """
