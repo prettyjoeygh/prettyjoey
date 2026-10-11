@@ -1,13 +1,15 @@
 [project]
 name = "prettyjoey"
-version = "0.1.4"
+version = "0.1.5"
 description = "Add your description here"
 readme = "README.md"
 authors = [
     { name = "prettyjoey", email = "prettyjoey46@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "scikit-learn>=1.9.1",
+]
 
 [tool.maturin]
 module-name = "prettyjoey._core"
