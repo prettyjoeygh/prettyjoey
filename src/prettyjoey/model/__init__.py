@@ -1,2 +1,2 @@
-from .regression import LinearRegression
-
+from .regression import LinearRegression, CauchyRegression
+from .logit import LogisticRegression

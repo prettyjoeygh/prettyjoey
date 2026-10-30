@@ -1,7 +1,11 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-
+import polars as pl
+import seaborn as sns
+import matplotlib.pyplot as plt
+import torch
+import numpy as np
 
 class LinearRegression:
     """
@@ -133,3 +137,112 @@ class LinearRegression:
 
         plt.tight_layout()
         plt.show()
+
+class CauchyRegression:
+    def __init__(self, c=1.0, learning_rate=0.1, epochs=1000):
+        self.c = c
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+
+        # w0 (intercept) and w = [w1, w2, w3, w4]
+        self.w0 = torch.zeros(1, dtype=torch.float64, requires_grad=True)
+        self.w = torch.zeros(4, dtype=torch.float64, requires_grad=True)
+
+        # sgd, from linearregression model we did in hw3
+        self.optimization = torch.optim.SGD([self.w0, self.w], lr=self.learning_rate)
+
+        self.loss_past = []
+
+    def forward(self, x):
+        """linear model: y_hat = w0 + w1*x1 + w2*x2 + w3*x3 + w4*x4"""
+        return self.w0 + x @ self.w
+
+    def cauchy_loss(self, y_pred, y_true):
+        """avg cauchy loss: (c^2/2) * log(1 + ((y - y_hat)/c)^2)"""
+        r = (y_true - y_pred) / self.c
+        return torch.mean((self.c ** 2 / 2) * torch.log(1 + r ** 2))
+    def fit(self, x_train, y_train):
+        x = torch.tensor(np.array(x_train), dtype=torch.float64)
+        y = torch.tensor(np.array(y_train), dtype=torch.float64).flatten()
+        # used for confidence interval calculation
+        self.X_train = np.array(x_train)
+        self.y_train = np.array(y_train).flatten()
+        
+        # standardize the features 
+        self.x_mean = x.mean(dim=0)
+        self.x_std = x.std(dim=0)
+        x_scaled = (x - self.x_mean) / self.x_std
+
+        # start every fit from the same place: w = 0, w0 = mean of y
+        with torch.no_grad():
+            self.w0.fill_(y.mean().item())
+            self.w.zero_()
+        self.loss_past = []
+
+        for i in range(self.epochs):
+            self.optimization.zero_grad()
+            y_pred = self.forward(x_scaled)
+            loss_value = self.cauchy_loss(y_pred, y)
+            self.loss_past.append(loss_value.item())
+            loss_value.backward()
+            self.optimization.step()
+
+        # convert the weights back to the original feature units
+        with torch.no_grad():
+            self.w_orig = self.w / self.x_std
+            self.w0_orig = self.w0 - torch.sum(self.w * self.x_mean / self.x_std)
+        # c,d
+        print("w0 (intercept):", round(self.w0_orig.item(), 6))
+        for j, wj in enumerate(self.w_orig):
+            print(f"w{j+1}:", round(wj.item(), 6))
+        print("final loss:", round(self.loss_past[-1], 6))
+
+    def predict(self, x_new):
+        x_new = torch.tensor(np.array(x_new), dtype=torch.float64)
+        with torch.no_grad():
+            return (self.w0_orig + x_new @ self.w_orig).numpy()
+    def conf_int(self, alpha=0.05):
+        from scipy import stats
+
+        theta = np.concatenate([[self.w0_orig.item()], self.w_orig.numpy()]) # [w0, w1..w4]
+        Z = np.column_stack([np.ones(len(self.X_train)), self.X_train])
+        r = (self.y_train - Z @ theta) / self.c
+
+        score = (-self.c * r / (1 + r ** 2))[:, None] * Z # per-sample gradient of the loss
+        B = score.T @ score
+        h = (1 - r ** 2) / (1 + r ** 2) ** 2 # second derivative per sample
+        H = (Z * h[:, None]).T @ Z
+
+        Hinv = np.linalg.inv(H)
+        se = np.sqrt(np.diag(Hinv @ B @ Hinv))
+        z = stats.norm.ppf(1 - alpha / 2) # 1.96 for 95%
+
+        names = ['w0 (intercept)', 'w1 (AT)', 'w2 (V)', 'w3 (AP)', 'w4 (RH)']
+        for n, t, s in zip(names, theta, se):
+            print(f"{n:15s} {t: .4f}   95% CI = [{t - z*s: .4f}, {t + z*s: .4f}]")
+    def residual_plot(self):
+        residuals = self.predict(self.X_train) - self.y_train     # y_hat - y
+        names = ['x1 (AT)', 'x2 (V)', 'x3 (AP)', 'x4 (RH)']
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+
+        for j, ax in enumerate(axes.ravel()):
+            ax.scatter(self.X_train[:, j], residuals, s=4, alpha=0.4)
+            ax.axhline(y=0, color='red', linestyle='--')
+            ax.set(xlabel=names[j], ylabel=r'y_hat - y')
+            ax.grid(True, linestyle='--', alpha=0.6)
+        
+        plt.tight_layout()
+        plt.show()
+    def scatter_matrix(self, df):
+        sns.pairplot(df.to_pandas(), plot_kws={'alpha': 0.5, 's': 4})
+        plt.show()
+
+    def coefficients(self):
+        print("w0 (intercept):", round(self.w0_orig.item(), 4))
+        for j, wj in enumerate(self.w_orig):
+            print(f"w{j+1}:", round(wj.item(), 4))
+
+    def final_loss(self):
+        y_hat = torch.tensor(self.predict(self.X_train))
+        y = torch.tensor(self.y_train, dtype=torch.float64)
+        return self.cauchy_loss(y_hat, y).item()
